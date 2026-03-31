@@ -1,24 +1,58 @@
-name: Redroid WebRTC Stream
-on: workflow_dispatch
+name: Redroid + Sunshine + Tailscale
+on: 
+  workflow_dispatch:
 
 jobs:
-  run-redroid-webrtc:
+  run-sunshine:
     runs-on: ubuntu-latest
     steps:
-      - name: Preparar Kernel (Indispensable para Redroid)
+      - name: 1. Preparar Kernel
         run: |
           sudo apt-get update
           sudo apt-get install -y linux-modules-extra-$(uname -r)
-          sudo modprobe binder_linux
-          sudo modprobe ashmem_linux
+          sudo modprobe binder_linux || true
+          sudo modprobe ashmem_linux || true
 
-      - name: Ejecutar Redroid con WebRTC
+      - name: 2. Conectar a Tailscale (VPN)
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+      - name: 3. Iniciar Redroid
         run: |
-          # Aquí usamos la imagen que ya tiene el soporte WebRTC/Selkies
+          # Iniciamos el motor Android
           docker run -d \
             --privileged \
-            --name redroid-webrtc \
-            -p 8080:8080 \
+            --name redroid \
             -p 5555:5555 \
-            j7819/redroid-webrtc:11.0.0 # O la versión que indique el repo
+            redroid/redroid:11.0.0-latest \
+            androidboot.redroid_width=1280 \
+            androidboot.redroid_height=720 \
+            androidboot.redroid_fps=60 \
+            androidboot.redroid_gpu_mode=guest
 
+      - name: 4. Instalar y Correr Sunshine (Host)
+        run: |
+          # Instalamos Sunshine en el Ubuntu del Runner de GitHub
+          sudo apt-get install -y libevdev2 libuinput-dev
+          wget https://github.com/LizardByte/Sunshine/releases/download/v0.21.0/sunshine-ubuntu-22.04-amd64.deb
+          sudo apt install -y ./sunshine-ubuntu-22.04-amd64.deb
+          
+          # Sunshine necesita un archivo de configuración mínimo para no pedir password inicial
+          mkdir -p ~/.config/sunshine
+          echo "pincode = 1234" > ~/.config/sunshine/sunshine.conf
+          
+          # Ejecutar Sunshine en segundo plano
+          sunshine & 
+
+      - name: 5. Info de Conexión
+        run: |
+          echo "=========================================================="
+          echo "✅ DISPOSITIVO CONECTADO A TAILSCALE"
+          echo "Busca la IP de este runner en tu app de Tailscale"
+          echo "Luego usa Moonlight para conectarte a esa IP."
+          echo "=========================================================="
+          tailscale ip -4
+
+      - name: 6. Mantener activo
+        run: sleep 7200
